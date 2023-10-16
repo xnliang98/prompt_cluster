@@ -1,6 +1,6 @@
+# export OPENAI_API_KEY=""
 
-
-python3 cluster_utils.py \
+python3 openai_utils.py \
     --in_dir data/ \
     --in_file sharegpt-zh.jsonl \
     --out_dir output_ada/ \

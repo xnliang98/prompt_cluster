@@ -1,7 +1,7 @@
 import os
 import json
 import argparse
-
+import time
 import torch
 import random
 import pandas as pd
@@ -13,7 +13,7 @@ from transformers import AutoTokenizer, AutoModel
 from sklearn.cluster import DBSCAN, HDBSCAN, KMeans, Birch
 
 from utils import load_jsonl, save_jsonl
-
+from openai_utils import calculate_embeddings
 
 def batchize(data, batch_size=2):
     idx, texts = [], []
@@ -22,6 +22,28 @@ def batchize(data, batch_size=2):
         texts.append(d['text'])
     batched_text = [texts[i:i+batch_size] for i in range(0, len(texts), batch_size)]
     return idx, batched_text
+
+
+def get_ada_embeddings(data, batch_size=64):
+    idxes, batched_text = batchize(data, batch_size)
+
+    embeddings = []
+
+    for sentences in tqdm(batched_text):
+        
+        emb = calculate_embeddings(sentences)
+        embeddings.extend(emb) 
+        time.sleep(6)
+
+    assert len(idxes) == len(embeddings), "id长度和embedding长度不一致，请检查embedding获取是否合理！"
+
+    id_embeddings = []
+    for idx, embedding in zip(idxes, embeddings):
+        id_embeddings.append({
+            "id": idx,
+            "embedding": embedding.tolist()
+        })
+    return id_embeddings
 
 def get_embeddings(data, batch_size=2):
     
@@ -155,7 +177,8 @@ if __name__ == "__main__":
     parser.add_argument("--in_dir", default=None, help="输入文件所在文件夹")
     parser.add_argument("--in_file", default=None, help="输入文件名，{'id': xxx, 'text': xxx}")
     parser.add_argument("--out_dir", default=None, help="向量输出位置")
-    parser.add_argument("--batch_size", default=4, type=int)
+    parser.add_argument("--emb_method", default="bert", help="表征获取方法")
+    parser.add_argument("--batch_size", default=16, type=int)
     parser.add_argument("--reduce_dim", default=3, type=int)
     parser.add_argument("--cluster_algo", default="KMeans", help="建议使用：KMeans、DBSCAN、BisectingKMeans")
 
@@ -180,8 +203,12 @@ if __name__ == "__main__":
     elif os.path.exists(os.path.join(args.out_dir, out_emb_name)):
         id_embeddings = load_jsonl(os.path.join(args.out_dir, out_emb_name))
     else:
-        id_embeddings = get_embeddings(data, args.batch_size)
-        save_jsonl(id_embeddings, os.path.join(args.out_dir, out_emb_name))
+        if args.emb_method == "bert":
+            id_embeddings = get_embeddings(data, args.batch_size)
+            save_jsonl(id_embeddings, os.path.join(args.out_dir, out_emb_name))
+        elif args.emb_method == "ada":
+            id_embeddings = get_ada_embeddings(data, args.batch_size)
+            save_jsonl(id_embeddings, os.path.join(args.out_dir, out_emb_name))
 
     idxes, labels, embeddings = get_cluster(id_embeddings, reduce_dim=args.reduce_dim, c_algo=args.cluster_algo)
     # 保存 labels
